@@ -124,12 +124,12 @@ const walls = &[4]Surface{
     .{ .a = .{ .x = 0.99, .y = 0.01 }, .b = .{ .x = 0.99, .y = 0.69 } },
 };
 
-extern fn logWasm(s: [*]u8, len: usize) void;
-fn print(comptime fmt: []const u8, args: anytype) void {
-    var buf: [4096]u8 = undefined;
-    const s = std.fmt.bufPrint(&buf, fmt, args) catch unreachable;
-    logWasm(s.ptr, s.len);
-}
+// extern fn logWasm(s: [*]u8, len: usize) void;
+// fn print(comptime fmt: []const u8, args: anytype) void {
+//     var buf: [4096]u8 = undefined;
+//     const s = std.fmt.bufPrint(&buf, fmt, args) catch unreachable;
+//     logWasm(s.ptr, s.len);
+// }
 
 pub export fn init(max_balls: usize, max_chamber_pixels: usize) void {
     physics.assertBallLayout();
@@ -219,7 +219,6 @@ pub export fn load() void {
     @memcpy(in_pocket_in, save_data[idx .. idx + in_pocket_in.len]);
     idx += in_pocket_in.len;
 
-
     state.resetFromIntState();
 }
 
@@ -299,15 +298,15 @@ fn initPoolBalls() void {
     state.in_pocket = 0;
 }
 
-fn clampSpeed(ball: *Ball) void {
-    const max_speed = 6.0;
-    const max_speed_2 = max_speed * max_speed;
-    const ball_speed_2 = ball.velocity.length_2();
-    if (ball_speed_2 > max_speed_2) {
-        const ball_speed = std.math.sqrt(ball_speed_2);
-        ball.velocity = ball.velocity.mul(max_speed / ball_speed);
-    }
-}
+// fn clampSpeed(ball: *Ball) void {
+//     const max_speed = 6.0;
+//     const max_speed_2 = max_speed * max_speed;
+//     const ball_speed_2 = ball.velocity.length_2();
+//     if (ball_speed_2 > max_speed_2) {
+//         const ball_speed = std.math.sqrt(ball_speed_2);
+//         ball.velocity = ball.velocity.mul(max_speed / ball_speed);
+//     }
+// }
 
 // has elasticity of 1.0
 fn pballCollision(a: *Ball, b: *Ball) void {
@@ -341,12 +340,15 @@ fn checkWallCollisions(ball: *Ball, delta: f32) void {
     }
 }
 
+fn isOob(pos: Pos2) bool {
+    return pos.x < 0.0 or pos.x > 0.98 or pos.y < 0.0 or pos.y > 0.68;
+}
+
 pub export fn step(num_balls: usize, delta: f32) void {
     state.ensureRngInitialized(num_balls);
     const min_sim_ball_v = 0.7;
     const min_sim_ball_v_2 = min_sim_ball_v * min_sim_ball_v;
-    const pball_v_thres = 0.004;
-    const pball_friction = 0.97;
+    const pball_friction = 0.95;
     const random = state.rng.?.random();
 
     var cue = &state.cue;
@@ -365,10 +367,9 @@ pub export fn step(num_balls: usize, delta: f32) void {
     }
 
     cue.pos = cue.pos.add(cue.velocity.mul(delta));
-    if (cue.pos.x > 0.99 or cue.pos.x < 0.00 or cue.pos.y > 0.69 or cue.pos.y < 0.00) {
-        print("reset from a oob pos {any}", .{cue.pos});
+    if (isOob(cue.pos)) {
+        // print("cue oob {any}", .{cue.pos});
         cue.pos = cue_home;
-        // cue.velocity = Vec2.zero;
     }
     checkWallCollisions(cue, delta);
 
@@ -388,7 +389,6 @@ pub export fn step(num_balls: usize, delta: f32) void {
             if (pball_ball.pos.sub(pocket).length() < pocket_radius) {
                 state.setInPocket(pball.id, true);
                 pball.ball.velocity = Vec2.zero;
-                pball.ball.pos = .{ .x = 1.5, .y = 1.0 };
                 pball.setIntState();
                 continue :pballs;
             }
@@ -402,10 +402,9 @@ pub export fn step(num_balls: usize, delta: f32) void {
         }
 
         for (i + 1..state.pool_balls.len) |j| {
-            if (j == i) continue;
             const oball = &state.pool_balls[j];
-            const oball_ball = &oball.ball;
             if (state.isInPocket(oball.id)) continue;
+            const oball_ball = &oball.ball;
 
             const center_dist = oball_ball.pos.sub(pball_ball.pos).length();
             if (center_dist < pball_ball.r + oball_ball.r) {
@@ -414,14 +413,14 @@ pub export fn step(num_balls: usize, delta: f32) void {
             }
         }
 
-        if (pball_ball.velocity.length() < pball_v_thres) {
-            pball_ball.velocity = Vec2.zero;
-        }
         pball_ball.pos = pball_ball.pos.add(pball_ball.velocity.mul(delta).mul(pball_friction));
+        if (isOob(pball_ball.pos)) {
+            state.setInPocket(pball.id, true);
+        }
         pball.setIntState();
     }
 
-    clampSpeed(cue);
+    // clampSpeed(cue);
     state.setCueIntState();
 }
 
